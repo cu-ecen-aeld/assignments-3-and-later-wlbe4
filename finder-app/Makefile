@@ -8,4 +8,4 @@ writer: writer.c
 all: writer
 
 clean:
-	@rm writer
+	@rm -f writer
