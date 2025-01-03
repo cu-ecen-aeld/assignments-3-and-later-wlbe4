@@ -3,7 +3,7 @@ default: all
 
 writer: writer.c
 	@echo Compiling $@
-	@${CROSS_COMPILE}gcc $< -o $@
+	@$(CC) $< -o $@
 
 all: writer
 
