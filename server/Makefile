@@ -1,7 +1,7 @@
 .PHONY: all clean
 default: all
 
-CFLAGS += -g -O0 -Wall -Werror
+CFLAGS += -g -O3 -Wall -Werror
 LDFLAGS += -lpthread -lrt
 aesdsocket: aesdsocket.c Makefile
 	@echo Compiling $@
