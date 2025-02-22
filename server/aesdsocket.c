@@ -145,17 +145,16 @@ void fill_client_ip(struct sockaddr_storage *their_addr, thread_data_t *thread_d
 /*  Send the file data to the client */
 void send_file_to_client(thread_data_t *thread_data)
 {
-#ifndef USE_AESD_CHAR_DEVICE    
-    lseek(thread_data->p_server_data->filefd, 0, SEEK_SET);
-#endif
+    int offset = 0;
     while(1) {
-        int numbytes = read(thread_data->p_server_data->filefd, thread_data->buf, sizeof(thread_data->buf));
+        int numbytes = pread(thread_data->p_server_data->filefd, thread_data->buf, sizeof(thread_data->buf),offset);
         if (numbytes == -1) {
             perror("read");
             server_shutdown(SERVER_EXIT_ERR);
         } else if (numbytes == 0) {
             break;
         } else {
+            offset += numbytes;
             if (send(thread_data->new_fd, thread_data->buf, numbytes, 0) == -1) {
                 perror("send");
                 server_shutdown(SERVER_EXIT_ERR);
