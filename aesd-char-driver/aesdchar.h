@@ -8,6 +8,8 @@
 #ifndef AESD_CHAR_DRIVER_AESDCHAR_H_
 #define AESD_CHAR_DRIVER_AESDCHAR_H_
 
+#include "aesd-circular-buffer.h"
+
 #define AESD_DEBUG 1  //Remove comment on this line to enable debug
 
 #undef PDEBUG             /* undef it, just in case */
@@ -23,11 +25,21 @@
 #  define PDEBUG(fmt, args...) /* not debugging: nothing */
 #endif
 
+/*Linked List Node*/
+struct temp_buffer_list{
+    struct list_head list;     //linux kernel list implementation
+    void *data;
+    size_t size;
+};
+
 struct aesd_dev
 {
     /**
      * TODO: Add structure(s) and locks needed to complete assignment requirements
      */
+    struct aesd_circular_buffer buffer;
+    struct list_head tbl;   /*  Temp buffers list to keep the writes without new line (\n)*/
+    struct mutex lock;    /* mutual exclusion semaphore     */
     struct cdev cdev;     /* Char device structure      */
 };
 

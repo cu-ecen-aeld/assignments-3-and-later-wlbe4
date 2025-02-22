@@ -11,9 +11,15 @@
 #include <arpa/inet.h>
 #include <pthread.h>
 
+#define USE_AESD_CHAR_DEVICE
+
 #define INITIAL_BUF_SIZE        (1024)
 #define PORT                    "9000"
+#ifdef USE_AESD_CHAR_DEVICE
+#define TMP_FILE_NAME           "/dev/aesdchar"
+#else
 #define TMP_FILE_NAME           "/var/tmp/aesdsocketdata"
+#endif
 #define SERVER_EXIT_OK          (0)
 #define SERVER_EXIT_ERR         (-1)
 
@@ -100,8 +106,10 @@ void server_shutdown(int sig) {
     // close all the threads
     join_all_threads();
     freeaddrinfo(g_server_data.servinfo);
+#ifndef USE_AESD_CHAR_DEVICE
     // delete the temp file
     remove(TMP_FILE_NAME);
+#endif
     exit(exit_code);
 }
 
@@ -113,7 +121,9 @@ void register_signal() {
 
 /* Open the file for writing received packets */
 void open_file(server_data_t *server_data) {
-    server_data->filefd = open(TMP_FILE_NAME, O_CREAT | O_RDWR | O_APPEND, 0644);
+    if (server_data->filefd == -1) {
+        server_data->filefd = open(TMP_FILE_NAME, O_CREAT | O_RDWR | O_APPEND, 0644);
+    }
     if (server_data->filefd == -1) {
         perror("open");
         server_shutdown(SERVER_EXIT_ERR);
@@ -135,7 +145,9 @@ void fill_client_ip(struct sockaddr_storage *their_addr, thread_data_t *thread_d
 /*  Send the file data to the client */
 void send_file_to_client(thread_data_t *thread_data)
 {
+#ifndef USE_AESD_CHAR_DEVICE    
     lseek(thread_data->p_server_data->filefd, 0, SEEK_SET);
+#endif
     while(1) {
         int numbytes = read(thread_data->p_server_data->filefd, thread_data->buf, sizeof(thread_data->buf));
         if (numbytes == -1) {
@@ -166,12 +178,19 @@ void* threadfunc(void* thread_param)
         } else if (numbytes) {
             thread_func_args->buf[numbytes] = '\0';
             // Write the received data to the file
+#ifdef USE_AESD_CHAR_DEVICE
+            // The file will be opened only if it is not opened yet.
+            open_file(thread_func_args->p_server_data);
+#else
             pthread_mutex_lock(&thread_func_args->p_server_data->mutex);
+#endif
             if (write(thread_func_args->p_server_data->filefd, thread_func_args->buf, numbytes) == -1) {
                 perror("write");
                 server_shutdown(SERVER_EXIT_ERR);
             }
+#ifndef USE_AESD_CHAR_DEVICE            
             pthread_mutex_unlock(&thread_func_args->p_server_data->mutex);
+#endif
             if (thread_func_args->buf[numbytes-1] == '\n') {
                 // send all collected data back to the client.
                 send_file_to_client(thread_func_args);
@@ -282,6 +301,7 @@ void open_socket(server_data_t *server_data) {
     }
 }
 
+#ifndef USE_AESD_CHAR_DEVICE    
 void write_timestamp_to_file(union sigval sigval) {
     server_data_t *server_data = (server_data_t *)sigval.sival_ptr;
     time_t now = time(NULL);
@@ -322,12 +342,15 @@ void start_timer(server_data_t *server_data) {
         server_shutdown(SERVER_EXIT_ERR);
     }
 }
+#endif
 
 int main(int argc, char const *argv[])
 {
     openlog(NULL, 0, LOG_USER);
     register_signal();
+#ifndef USE_AESD_CHAR_DEVICE
     open_file(&g_server_data);
+#endif
     open_socket(&g_server_data);
     // if first argument is -d, run as daemon
     if (argc > 1 && strcmp(argv[1], "-d") == 0) {
@@ -339,9 +362,10 @@ int main(int argc, char const *argv[])
             exit(0);
         }
     }
+#ifndef USE_AESD_CHAR_DEVICE        
     // Start a timer with 10 seconds interval which calls a function write a timestamp to the file
     start_timer(&g_server_data);
-
+#endif
     while(1) {
         listen_to_client(&g_server_data);
     }
