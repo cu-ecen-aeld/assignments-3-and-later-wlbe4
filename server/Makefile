@@ -2,10 +2,12 @@
 default: all
 
 CFLAGS += -g -O3 -Wall -Werror
+AESD_INCLUDES := -I../aesd-char-driver
 LDFLAGS += -lpthread -lrt
+
 aesdsocket: aesdsocket.c Makefile
 	@echo Compiling $@
-	@$(CC) $< $(CFLAGS) $(LDFLAGS) -o $@
+	@$(CC) $< $(CFLAGS) $(AESD_INCLUDES) $(LDFLAGS) -o $@
 
 all: aesdsocket
 

@@ -80,3 +80,28 @@ void aesd_circular_buffer_init(struct aesd_circular_buffer *buffer)
 {
     memset(buffer,0,sizeof(struct aesd_circular_buffer));
 }
+
+/**
+* Return the calculated total offset given an entry index and offset.
+* Function will return -1 if index + offset was out of range.
+*/
+long aesd_circulr_buffer_get_offset(struct aesd_circular_buffer *buffer, uint8_t idx, size_t off)
+{
+    uint8_t i, eidx;
+    uint8_t total_entries;
+    long    global_offset = 0;
+    if(buffer->full) total_entries = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    else if(buffer->in_offs > buffer->out_offs) total_entries = buffer->in_offs - buffer->out_offs;
+    else total_entries = AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED - buffer->out_offs + buffer->in_offs;
+
+    if (idx >= total_entries) return -1;
+
+    for (i = 0; i < idx; i++) {
+        eidx = (buffer->out_offs + i) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+        global_offset += buffer->entry[eidx].size;
+    }
+    eidx = (buffer->out_offs + idx) % AESDCHAR_MAX_WRITE_OPERATIONS_SUPPORTED;
+    if (off > buffer->entry[eidx].size) return -1;
+
+    return global_offset + off;
+}

@@ -10,6 +10,8 @@
 #include <syslog.h>
 #include <arpa/inet.h>
 #include <pthread.h>
+#include <sys/ioctl.h>
+#include "aesd_ioctl.h"
 
 #define USE_AESD_CHAR_DEVICE
 
@@ -147,7 +149,7 @@ void send_file_to_client(thread_data_t *thread_data)
 {
     int offset = 0;
     while(1) {
-        int numbytes = pread(thread_data->p_server_data->filefd, thread_data->buf, sizeof(thread_data->buf),offset);
+        int numbytes = read(thread_data->p_server_data->filefd, thread_data->buf, sizeof(thread_data->buf));
         if (numbytes == -1) {
             perror("read");
             server_shutdown(SERVER_EXIT_ERR);
@@ -161,6 +163,36 @@ void send_file_to_client(thread_data_t *thread_data)
             }
         }
     }
+}
+
+int get_cmd_idx_and_offset(char *buf, int numbytes, uint32_t *cmd_idx, uint32_t *cmd_offset) {
+    if (!buf || numbytes <= 0 || !cmd_idx || !cmd_offset) {
+        return -1;
+    }
+    
+    // Define the expected prefix
+    const char *prefix = "AESDCHAR_IOCSEEKTO:";
+    size_t prefix_len = strlen(prefix);
+    
+    // Ensure the buffer is large enough to contain the prefix
+    if ((size_t)numbytes <= prefix_len) {
+        return -1;
+    }
+    
+    // Check if the buffer starts with the expected prefix
+    if (strncmp(buf, prefix, prefix_len) != 0) {
+        return -1;
+    }
+    
+    // Parse the two integers after the prefix
+    int idx, offset;
+    if (sscanf(buf + prefix_len, "%d,%d", &idx, &offset) != 2) {
+        return -1;
+    }
+    
+    *cmd_idx = (uint32_t)idx;
+    *cmd_offset = (uint32_t)offset;
+    return 0;
 }
 
 void* threadfunc(void* thread_param)
@@ -180,14 +212,29 @@ void* threadfunc(void* thread_param)
 #ifdef USE_AESD_CHAR_DEVICE
             // The file will be opened only if it is not opened yet.
             open_file(thread_func_args->p_server_data);
+            struct aesd_seekto aesd_seekto_cmd;
+            int res = get_cmd_idx_and_offset(thread_func_args->buf,numbytes, 
+                &aesd_seekto_cmd.write_cmd, &aesd_seekto_cmd.write_cmd_offset);
 #else
             pthread_mutex_lock(&thread_func_args->p_server_data->mutex);
 #endif
-            if (write(thread_func_args->p_server_data->filefd, thread_func_args->buf, numbytes) == -1) {
-                perror("write");
-                server_shutdown(SERVER_EXIT_ERR);
+            if (res == 0) {
+                // Send the IOCTL command
+                if (ioctl(thread_func_args->p_server_data->filefd, AESDCHAR_IOCSEEKTO, &aesd_seekto_cmd) != 0)
+                {
+                    perror("ioctl");
+                    server_shutdown(SERVER_EXIT_ERR);          
+                }
+            }else {
+                if (write(thread_func_args->p_server_data->filefd, thread_func_args->buf, numbytes) == -1) {
+                    perror("write");
+                    server_shutdown(SERVER_EXIT_ERR);
+                }
+                // Since now we support the seek command via IOCTL we need to reset file position 
+                // after each write because we had to remove the use of pread with offset 0 on the send_file_to_client function.
+                lseek(thread_func_args->p_server_data->filefd, 0, SEEK_SET);
             }
-#ifndef USE_AESD_CHAR_DEVICE            
+#ifndef USE_AESD_CHAR_DEVICE 
             pthread_mutex_unlock(&thread_func_args->p_server_data->mutex);
 #endif
             if (thread_func_args->buf[numbytes-1] == '\n') {
